@@ -1,3 +1,4 @@
+from enum import Enum
 import logging
 import sys
 from typing import List, Optional, Tuple, Union, Set, Iterable
@@ -5,6 +6,11 @@ from typing import List, Optional, Tuple, Union, Set, Iterable
 from sentry_sdk import push_scope, capture_event
 from sentry_sdk.integrations.logging import ignore_logger as logging_int_ignore_logger
 from sentry_sdk.utils import event_from_exception
+
+
+class Mode(Enum):
+    context = "context"
+    extra = "extra"
 
 
 class SentryProcessor:
@@ -17,7 +23,7 @@ class SentryProcessor:
         self,
         level: int = logging.WARNING,
         active: bool = True,
-        mode: str = "context"
+        mode: Mode = Mode.context,
         tag_keys: Union[List[str], str] = None,
         ignore_loggers: Optional[Iterable[str]] = None,
         ignore_keys: Optional[Iterable[str]] = None,
@@ -27,7 +33,7 @@ class SentryProcessor:
         :param active: a flag to make this processor enabled/disabled.
 
         :param mode: determines the way to send the `event_dict` to sentry.
-            Valid values are "context" (current default) or "extra"
+            Valid values are `Mode.context' (current default) or `Mode.extra`
             (legacy default, deprecated and limited).
             Otherwhise, only the message will be sent.
         :param tag_keys: a list of keys. If any if these keys appear in `event_dict`,
@@ -90,10 +96,10 @@ class SentryProcessor:
         if "logger" in event_dict:
             event["logger"] = event_dict["logger"]
 
-        if self._mode == "context":
+        if self._mode == Mode.context:
             context = self._original_event_dict.copy()
 
-        elif self._mode == "extra":
+        elif self._mode == Mode.extra:
             event["extra"] = self._original_event_dict.copy()
 
         if self.tag_keys == "__all__":
