@@ -97,10 +97,10 @@ class SentryProcessor:
             event["logger"] = event_dict["logger"]
 
         if self._mode == Mode.context:
-            context = self._original_event_dict.copy()
+            context = self._filtered_event_dict.copy()
 
         elif self._mode == Mode.extra:
-            event["extra"] = self._original_event_dict.copy()
+            event["extra"] = self._filtered_event_dict.copy()
 
         if self.tag_keys == "__all__":
             event["tags"] = self._original_event_dict.copy()
@@ -133,7 +133,8 @@ class SentryProcessor:
             event_dict["sentry"] = "ignored"
             return event_dict
 
-        self._original_event_dict = {k: v for k, v in event_dict.items() if k not in self._ignore_keys}
+        self._original_event_dict = event_dict
+        self._filtered_event_dict = {k: v for k, v in event_dict.items() if k not in self._ignore_keys}
         sentry_skip = event_dict.pop("sentry_skip", False)
         do_log = getattr(logging, event_dict["level"].upper()) >= self.level
 
