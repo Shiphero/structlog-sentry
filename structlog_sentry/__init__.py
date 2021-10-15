@@ -17,8 +17,7 @@ class SentryProcessor:
         self,
         level: int = logging.WARNING,
         active: bool = True,
-        as_extra: bool = False,
-        as_context: bool = True,
+        mode: str = "context"
         tag_keys: Union[List[str], str] = None,
         ignore_loggers: Optional[Iterable[str]] = None,
         ignore_keys: Optional[Iterable[str]] = None,
@@ -26,8 +25,11 @@ class SentryProcessor:
         """
         :param level: events of this or higher levels will be reported to Sentry.
         :param active: a flag to make this processor enabled/disabled.
-        :param as_extra: send `event_dict` as extra info to Sentry. It's limited.
-        :param as_context: send `event_dict` as context data. Not limited.
+
+        :param mode: determines the way to send the `event_dict` to sentry.
+            Valid values are "context" (current default) or "extra"
+            (legacy default, deprecated and limited).
+            Otherwhise, only the message will be sent.
         :param tag_keys: a list of keys. If any if these keys appear in `event_dict`,
             the key and its corresponding value in `event_dict` will be used as Sentry
             event tags. use `"__all__"` to report all key/value pairs of event as tags.
@@ -37,8 +39,7 @@ class SentryProcessor:
         self.level = level
         self.active = active
         self.tag_keys = tag_keys
-        self._as_extra = as_extra
-        self._as_context = as_context
+        self._mode = mode
         self._original_event_dict = None
         self._ignored_loggers: Set[str] = set()
         if ignore_loggers is not None:
@@ -89,10 +90,10 @@ class SentryProcessor:
         if "logger" in event_dict:
             event["logger"] = event_dict["logger"]
 
-        if self._as_context:
+        if self._mode == "context":
             context = self._original_event_dict.copy()
 
-        if self._as_extra:
+        elif self._mode == "extra":
             event["extra"] = self._original_event_dict.copy()
 
         if self.tag_keys == "__all__":
