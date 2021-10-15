@@ -23,7 +23,7 @@ class SentryProcessor:
         self,
         level: int = logging.WARNING,
         active: bool = True,
-        mode: Mode = Mode.context,
+        mode: Optional[Mode] = Mode.context,
         tag_keys: Union[List[str], str] = None,
         ignore_loggers: Optional[Iterable[str]] = None,
         ignore_keys: Optional[Iterable[str]] = None,
