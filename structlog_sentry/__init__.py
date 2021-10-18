@@ -1,10 +1,16 @@
+from enum import Enum
 import logging
 import sys
 from typing import List, Optional, Tuple, Union, Set, Iterable
 
-from sentry_sdk import capture_event
+from sentry_sdk import push_scope, capture_event
 from sentry_sdk.integrations.logging import ignore_logger as logging_int_ignore_logger
 from sentry_sdk.utils import event_from_exception
+
+
+class Mode(Enum):
+    context = "context"
+    extra = "extra"
 
 
 class SentryProcessor:
@@ -17,27 +23,34 @@ class SentryProcessor:
         self,
         level: int = logging.WARNING,
         active: bool = True,
-        as_extra: bool = True,
+        mode: Optional[Mode] = Mode.context,
         tag_keys: Union[List[str], str] = None,
         ignore_loggers: Optional[Iterable[str]] = None,
+        ignore_keys: Optional[Iterable[str]] = None,
     ) -> None:
         """
         :param level: events of this or higher levels will be reported to Sentry.
         :param active: a flag to make this processor enabled/disabled.
-        :param as_extra: send `event_dict` as extra info to Sentry.
+
+        :param mode: determines the way to send the `event_dict` to sentry.
+            Valid values are `Mode.context' (current default) or `Mode.extra`
+            (legacy default, deprecated and limited).
+            Otherwhise, only the message will be sent.
         :param tag_keys: a list of keys. If any if these keys appear in `event_dict`,
             the key and its corresponding value in `event_dict` will be used as Sentry
             event tags. use `"__all__"` to report all key/value pairs of event as tags.
         :param ignore_loggers: a list of logger names to ignore any events from.
+        :param ignore_keys: a list of keys to ignore from the original event dictionary, if they exist.
         """
         self.level = level
         self.active = active
         self.tag_keys = tag_keys
-        self._as_extra = as_extra
+        self._mode = mode
         self._original_event_dict = None
         self._ignored_loggers: Set[str] = set()
         if ignore_loggers is not None:
             self._ignored_loggers.update(set(ignore_loggers))
+        self._ignore_keys = ignore_keys or []
 
     @staticmethod
     def _get_logger_name(logger, event_dict: dict) -> Optional[str]:
@@ -60,7 +73,7 @@ class SentryProcessor:
 
         return logger_name
 
-    def _get_event_and_hint(self, event_dict: dict) -> Tuple[dict, Optional[str]]:
+    def _get_event_context_and_hint(self, event_dict: dict) -> Tuple[dict, dict, Optional[str]]:
         """Create a sentry event and hint from structlog `event_dict` and sys.exc_info.
 
         :param event_dict: structlog event_dict
@@ -76,13 +89,19 @@ class SentryProcessor:
         else:
             event, hint = {}, None
 
+        context = {}
+
         event["message"] = event_dict.get("event")
         event["level"] = event_dict.get("level")
         if "logger" in event_dict:
             event["logger"] = event_dict["logger"]
 
-        if self._as_extra:
-            event["extra"] = self._original_event_dict.copy()
+        if self._mode == Mode.context:
+            context = self._filtered_event_dict.copy()
+
+        elif self._mode == Mode.extra:
+            event["extra"] = self._filtered_event_dict.copy()
+
         if self.tag_keys == "__all__":
             event["tags"] = self._original_event_dict.copy()
         elif isinstance(self.tag_keys, list):
@@ -90,15 +109,22 @@ class SentryProcessor:
                 key: event_dict[key] for key in self.tag_keys if key in event_dict
             }
 
-        return event, hint
+        return event, context, hint
 
     def _log(self, event_dict: dict) -> str:
         """Send an event to Sentry and return sentry event id.
 
         :param event_dict: structlog event_dict
         """
-        event, hint = self._get_event_and_hint(event_dict)
-        return capture_event(event, hint=hint)
+        event, context, hint = self._get_event_context_and_hint(event_dict)
+        if context:
+            with push_scope() as scope:
+                scope.set_context("Log event data", context)
+                event_id = capture_event(event, hint=hint)
+        else:
+            event_id = capture_event(event, hint=hint)
+
+        return event_id
 
     def __call__(self, logger, method, event_dict) -> dict:
         """A middleware to process structlog `event_dict` and send it to Sentry."""
@@ -107,7 +133,8 @@ class SentryProcessor:
             event_dict["sentry"] = "ignored"
             return event_dict
 
-        self._original_event_dict = event_dict.copy()
+        self._original_event_dict = event_dict
+        self._filtered_event_dict = {k: v for k, v in event_dict.items() if k not in self._ignore_keys}
         sentry_skip = event_dict.pop("sentry_skip", False)
         do_log = getattr(logging, event_dict["level"].upper()) >= self.level
 
