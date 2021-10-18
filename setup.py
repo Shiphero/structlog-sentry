@@ -3,7 +3,7 @@
 from pathlib import Path
 from setuptools import setup
 
-version = "1.4.1-dev"
+version = "1.4.1"
 
 # read the contents of your README file
 
@@ -15,7 +15,7 @@ setup(
     description="Sentry integration for structlog",
     author="Kiwi.com platform",
     author_email="platform@kiwi.com",
-    packages=['structlog_sentry'],
+    packages=["structlog_sentry"],
     long_description=long_description,
     long_description_content_type="text/markdown",
     license="MIT",
